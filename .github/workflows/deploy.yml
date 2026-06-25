@@ -1,0 +1,39 @@
+name: Deploy site
+
+# Build the Vite app on every push to main and publish the static output to the
+# `docs` branch. The built distribution never lives on main (dist/ is gitignored);
+# GitHub Pages serves it from the docs branch. Configure once under
+# Settings → Pages → "Deploy from a branch" → Branch: docs / (root).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # allow manual re-deploys
+
+permissions:
+  contents: write # peaceiris needs to push the built site to the docs branch
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Publish dist/ to the docs branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: docs

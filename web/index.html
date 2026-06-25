@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF Optimizer</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="dropOverlay" aria-hidden="true"><span>Drop PDF to load</span></div>
+    <main>
+      <header>
+        <h1>PDF&nbsp;Optimizer</h1>
+        <p class="tagline">
+          Shrink image-heavy PDFs (e.g. from Figma) by recompressing and
+          cropping heavy images. Runs entirely in the browser (nothing is
+          uploaded to a server) and has no impact on other aspects of the PDF
+          such as masks, shapes, etc.
+        </p>
+      </header>
+
+      <section>
+        <span class="label">Input</span>
+        <div
+          id="drop"
+          class="box"
+          tabindex="0"
+          role="button"
+          aria-label="Choose or drop a PDF"
+        >
+          <span class="big">Drop a PDF here</span>
+          <span class="sub">or click to choose a file</span>
+          <input id="file" type="file" accept="application/pdf,.pdf" />
+        </div>
+      </section>
+
+      <section id="stats" hidden>
+        <span class="label">File</span>
+        <div class="box statbox">
+          <div id="statFacts" class="stat-facts"></div>
+          <p id="statBreakdown" class="stat-breakdown"></p>
+          <div id="statEstimate" class="stat-estimate"></div>
+        </div>
+      </section>
+
+      <section>
+        <span class="label">Options</span>
+        <div id="options" class="box">
+          <div class="field">
+            <span class="name">JPEG quality</span>
+            <div class="control">
+              <div class="slider-row">
+                <input
+                  id="quality"
+                  type="range"
+                  min="1"
+                  max="100"
+                  value="80"
+                  aria-label="JPEG quality"
+                />
+                <span id="qualityVal" class="slider-val">80</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="name">DPI cap</span>
+            <div class="control">
+              <input
+                id="dpi"
+                type="number"
+                min="0"
+                step="1"
+                value="300"
+                aria-label="DPI cap"
+              />
+              <span class="presets">
+                <button type="button" class="btn-sm" data-dpi="72">72</button>
+                <button type="button" class="btn-sm" data-dpi="150">150</button>
+                <button type="button" class="btn-sm" data-dpi="300">300</button>
+              </span>
+              <span class="hint">0 = no downsampling</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="name">Chroma</span>
+            <div class="control">
+              <select id="subsampling" aria-label="Chroma subsampling">
+                <option value="4:4:4">4:4:4 — full colour</option>
+                <option value="4:2:2">4:2:2 — balanced</option>
+                <option value="4:2:0">4:2:0 — smallest</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="name">Cropping</span>
+            <div class="control">
+              <label class="check">
+                <input id="blank" type="checkbox" checked />
+                <span class="ind"></span>
+                <span>Crop pixels outside of page</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <button id="go" class="btn-block" disabled>Optimize</button>
+      </section>
+
+      <section id="progress" hidden>
+        <span class="label">Working</span>
+        <div id="bar" class="bar">
+          <div id="barFill" class="bar-fill"></div>
+        </div>
+        <p id="status"></p>
+      </section>
+
+      <section id="results" hidden>
+        <span class="label">Result</span>
+        <a id="download" class="btn-block" href="#"></a>
+        <pre id="report"></pre>
+      </section>
+
+      <footer>
+        an
+        <a
+          href="https://github.com/mattdesl/pdf-optimizer"
+          target="_blank"
+          rel="noopener"
+          >open source tool</a
+        >
+        made by
+        <a
+          href="https://mattdesl.com/"
+          target="_blank"
+          rel="noopener"
+          target="_blank"
+          >@mattdesl</a
+        >
+        + claude
+      </footer>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

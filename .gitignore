@@ -1,0 +1,16 @@
+node_modules
+bower_components
+dist
+.vite
+
+# big test PDFs — never commit
+fixtures
+
+# local tooling
+.claude
+.DS_Store
+*.log
+.env
+
+# generated output
+*.optimized.pdf

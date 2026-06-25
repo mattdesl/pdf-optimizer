@@ -1,0 +1,54 @@
+{
+  "name": "pdf-optimizer",
+  "version": "1.0.0",
+  "description": "Shrink image-heavy PDFs (e.g. Figma exports) by recompressing images in place, without touching color, vectors, masks or text.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./browser": "./src/browser.js"
+  },
+  "bin": {
+    "pdf-optimize": "bin/cli.js"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Matt DesLauriers",
+    "url": "https://github.com/mattdesl"
+  },
+  "dependencies": {
+    "@jsquash/jpeg": "^1.6.0",
+    "@jsquash/resize": "^2.1.1",
+    "hack-font": "^3.3.0",
+    "mupdf": "1.27.0",
+    "pako": "^2.1.0",
+    "sharp": "0.35.1"
+  },
+  "scripts": {
+    "test": "node test.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "pdf",
+    "optimize",
+    "compress",
+    "figma",
+    "image"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/mattdesl/pdf-optimizer.git"
+  },
+  "homepage": "https://github.com/mattdesl/pdf-optimizer",
+  "bugs": {
+    "url": "https://github.com/mattdesl/pdf-optimizer/issues"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}
