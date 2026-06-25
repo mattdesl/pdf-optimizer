@@ -1,11 +1,17 @@
 # pdf-optimizer
 
-[![experimental](http://badges.github.io/stability-badges/dist/experimental.svg)](http://github.com/badges/stability-badges)
+> [note: this tool was authored by Claude Code under my direction]
 
-Shrink image-heavy PDFs — especially **Figma exports** — by recompressing their
+Shrink image-heavy PDFs — e.g. Figma exports — by recompressing their
 raster images **in place**, without re-writing the rest of the document.
 
-Figma (and tools like it) export photographs as *losslessly* Flate-compressed
+## Web Demo
+
+https://mattdesl.github.io/pdf-optimizer
+
+## Details
+
+Figma (and tools like it) export photographs as _losslessly_ Flate-compressed
 raw bitmaps, so a deck full of images can be hundreds of megabytes. This tool
 swaps each image stream for a JPEG and leaves **everything else byte-for-byte
 intact**: vectors, clipping/soft masks, text, the ICC color profile, and the
@@ -15,17 +21,17 @@ ICC profile) and mangle masks/shapes.
 
 On a real 24-page Figma portfolio:
 
-| | size | color | masks/vectors |
-|---|---|---|---|
-| original | 302.8 MB | ICC | intact |
-| `gs -dPDFSETTINGS=/screen` | 24.7 MB | **flattened to DeviceRGB** | **re-baked** |
-| `pdf-optimize` (defaults) | 38.9 MB | **ICC preserved** | **untouched** |
-| `pdf-optimize -q 45 --subsampling 4:2:0` | 15.7 MB | **ICC preserved** | **untouched** |
+|                                          | size     | color                      | masks/vectors |
+| ---------------------------------------- | -------- | -------------------------- | ------------- |
+| original                                 | 302.8 MB | ICC                        | intact        |
+| `gs -dPDFSETTINGS=/screen`               | 24.7 MB  | **flattened to DeviceRGB** | **re-baked**  |
+| `pdf-optimize` (defaults)                | 38.9 MB  | **ICC preserved**          | **untouched** |
+| `pdf-optimize -q 45 --subsampling 4:2:0` | 15.7 MB  | **ICC preserved**          | **untouched** |
 
 Render-diffing every page before/after shows the output is 2–3× closer to the
 original than the Ghostscript result. Ghostscript is smaller only because it uses
 aggressive JPEG quality + 4:2:0 chroma (it does **not** downsample) — match those
-dials and `pdf-optimize` is both smaller *and* fidelity-preserving.
+dials and `pdf-optimize` is both smaller _and_ fidelity-preserving.
 
 ## How it works
 
@@ -58,7 +64,7 @@ fallback). The final save uses mupdf with `compress-images=no` so your fresh
 JPEGs are never re-touched.
 
 `--dpi` is **placement-aware**: it measures how large each image is actually
-drawn on the page and only downsamples images whose *effective* resolution
+drawn on the page and only downsamples images whose _effective_ resolution
 exceeds the target (default 300), leaving full-bleed/low-res images alone.
 `--dpi 0` disables downsampling.
 
@@ -105,9 +111,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const { bytes, stats } = await optimize(readFileSync("deck.pdf"), {
   quality: 85,
-  dpi: 200,             // placement-aware downsample (omit/null = off)
+  dpi: 200, // placement-aware downsample (omit/null = off)
   subsampling: "4:4:4",
-  blankOffPage: true,   // flatten never-visible pixels (default)
+  blankOffPage: true, // flatten never-visible pixels (default)
 });
 writeFileSync("deck.optimized.pdf", bytes);
 
@@ -132,13 +138,13 @@ swapped. The main thread is pure UI (a ~4 KB bundle):
   `optimize()` (mupdf + the engine), so the page never blocks. It reports the
   image count up front (free — the engine already lists the images in one pass)
   and streams progress for a progress bar.
-- **`src/encode.worker.js`** — a nested **pool of 2–4 workers** doing the *entire*
+- **`src/encode.worker.js`** — a nested **pool of 2–4 workers** doing the _entire_
   per-image pixel pipeline: **native `DecompressionStream` inflate** (decode runs in
   the pool, in parallel — it was the serial bottleneck on the orchestrator thread),
   then the shared `processPixels` (blank → resize → encode) with
   [jsquash](https://github.com/jamsinclair/jSquash) MozJPEG (4:4:4-capable, same
   codec as sharp), Lanczos resize, and [pako](https://github.com/nodeca/pako)
-  deflate. The orchestrator only reads the *compressed* stream and writes the
+  deflate. The orchestrator only reads the _compressed_ stream and writes the
   result. A worker that OOMs on a giant image is respawned while that one image
   keeps its original. Parallelism is **capped and scaled down for large files**
   (down to 2 in-flight images above ~150 MB) so a huge PDF doesn't exhaust memory
@@ -146,7 +152,10 @@ swapped. The main thread is pure UI (a ~4 KB bundle):
 
 ```js
 import { optimize } from "pdf-optimizer/browser";
-const { bytes, stats } = await optimize(new Uint8Array(await file.arrayBuffer()), { quality: 80 });
+const { bytes, stats } = await optimize(
+  new Uint8Array(await file.arrayBuffer()),
+  { quality: 80 },
+);
 ```
 
 Architecture: `src/optimize.js` is platform-agnostic, processes images with a
