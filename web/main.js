@@ -1,5 +1,4 @@
 import "hack-font/build/web/hack.css";
-import { POOL_SIZE } from "../src/pool-size.js";
 
 /* ------------------------------------------------------------------ *
  * Helpers
@@ -47,7 +46,11 @@ const statEstimate = $("statEstimate");
 
 const setStatus = (html) => { statusEl.innerHTML = html; };
 
-let pdfBytes = null;
+// The dropped File. Bytes are read fresh per probe/run via File.arrayBuffer() and
+// transferred to the worker, so the main thread never holds — or synchronously
+// copies — the whole multi-hundred-MB PDF (that copy was the worst UI jank).
+let currentFile = null;
+let currentFileId = 0; // bumped per dropped file; lets the worker match a cached scan
 let pdfName = "document.pdf";
 
 // Read every size-affecting control once. run() maps `crop` onto the engine's
@@ -62,31 +65,17 @@ function readControls() {
   };
 }
 
-// How many images to process in parallel. Each in-flight image decodes to raw
-// RGB (tens of MB), so high parallelism on a big PDF balloons memory and hangs
-// the tab — we scale it down as the file grows rather than exposing a dial.
-function concurrencyFor(bytes) {
-  const mb = bytes / 1e6;
-  if (mb > 150) return 2;
-  if (mb > 50) return 3;
-  return Math.min(4, POOL_SIZE);
-}
-
 /* ------------------------------------------------------------------ *
  * Worker — the whole optimize (mupdf + engine + encode pool) runs here so the
- * main thread stays pure UI. Created lazily and reused across runs.
+ * main thread stays pure UI. Created lazily and reused across runs. Parallelism
+ * is left to the engine default (the encode-pool size, 2–4; see pool-size.js) —
+ * enough to keep the pool busy without ballooning memory on a huge PDF.
  * ------------------------------------------------------------------ */
 
 let orchestrator = null;
 function getOrchestrator() {
   if (!orchestrator) orchestrator = new Worker(new URL("./optimize.worker.js", import.meta.url), { type: "module" });
   return orchestrator;
-}
-
-// Send a copy so pdfBytes survives for re-runs (the worker detaches its input).
-function sendBytes(worker, message) {
-  const copy = pdfBytes.slice();
-  worker.postMessage({ ...message, bytes: copy.buffer }, [copy.buffer]);
 }
 
 /* ------------------------------------------------------------------ *
@@ -157,38 +146,50 @@ function setFile(file) {
   if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name || "")) {
     // Ignore non-PDF drops; only surface the error when nothing is loaded yet, so
     // a stray drop never clobbers a file you already have.
-    if (!pdfBytes) setDrop(
+    if (!currentFile) setDrop(
       `<span class="big">Drop a PDF here</span>` +
       `<span class="sub"><span class="err">“${escapeHtml(file.name || "that file")}” isn’t a PDF</span></span>`
     );
     return;
   }
+  currentFile = file;
+  currentFileId++;
   pdfName = file.name || "document.pdf";
-  const reader = new FileReader();
-  reader.onload = () => {
-    pdfBytes = new Uint8Array(reader.result);
-    setDrop(
-      `<span class="big file-name">${escapeHtml(pdfName)}</span>` +
-      `<span class="file-meta">${fmt(pdfBytes.length)} · click to replace</span>`,
-      true,
-    );
-    go.disabled = false;
-    $("progress").hidden = true;
-    $("results").hidden = true;
-    probeFile();
-  };
-  reader.readAsArrayBuffer(file);
+  // file.size is known without reading — no need to slurp the whole PDF here.
+  setDrop(
+    `<span class="big file-name">${escapeHtml(pdfName)}</span>` +
+    `<span class="file-meta">${fmt(file.size)} · click to replace</span>`,
+    true,
+  );
+  go.disabled = false;
+  $("progress").hidden = true;
+  $("results").hidden = true;
+  probeFile();
 }
 
 /* ------------------------------------------------------------------ *
  * Run
  * ------------------------------------------------------------------ */
 
-go.addEventListener("click", run);
+let running = false;
+let cancelRun = null; // set to a cancel fn while a run is in flight
+
+// One button, two jobs: start a run, or cancel the one in progress.
+go.addEventListener("click", () => {
+  if (running) cancelRun?.();
+  else run();
+});
+
+// Toggle the primary button between Optimize and its red Cancel state.
+function setCancelMode(on) {
+  go.textContent = on ? "Cancel" : "Optimize";
+  go.classList.toggle("cancel", on);
+}
 
 async function run() {
-  if (!pdfBytes) return;
-  go.disabled = true;
+  if (!currentFile || running) return;
+  running = true;
+  setCancelMode(true);
   $("results").hidden = true;
 
   const c = readControls();
@@ -197,10 +198,10 @@ async function run() {
     dpi: c.dpi,
     subsampling: c.subsampling,
     blankOffPage: c.crop,
-    concurrency: concurrencyFor(pdfBytes.length),
   };
 
-  const before = pdfBytes.length;
+  const before = currentFile.size;
+  const fileId = currentFileId; // bind to the bytes we're about to read
   const t0 = performance.now();
 
   const bar = $("bar");
@@ -214,45 +215,72 @@ async function run() {
   // already fully on screen (don't yank the page when it's visible).
   if (!fullyVisible(bar)) scrollToward($("progress"));
 
-  const worker = getOrchestrator();
-  await new Promise((resolve) => {
-    const fail = (msg) => { setStatus("⚠ " + msg); bar.classList.remove("indeterminate"); resolve(); };
-    worker.onerror = (e) => fail("worker error: " + (e.message || "failed to load (check the console)"));
-    worker.onmessageerror = () => fail("worker message error");
+  // Cancel = terminate the orchestrator worker. That instantly stops mupdf and the
+  // whole encode pool (its child workers die with it) and frees their memory; the
+  // next run lazily spins up a fresh worker. settle() unwinds run() so the UI resets.
+  let cancelled = false;
+  let settle = () => {};
+  cancelRun = () => {
+    cancelled = true;
+    if (orchestrator) { orchestrator.terminate(); orchestrator = null; }
+    settle();
+  };
 
-    worker.onmessage = (e) => {
-      const m = e.data;
-      if (m.type === "log") {
-        setStatus(m.msg);
-      } else if (m.type === "analyze") {
-        setStatus(`Analyzing pages… ${tick(`${m.page} / ${m.total}`)}`);
-      } else if (m.type === "start") {
-        bar.classList.remove("indeterminate");
-        bar.dataset.total = m.total || 1;
-        fill.style.width = "0%";
-        setStatus(`${tick(`0 / ${m.total}`)} images`);
-      } else if (m.type === "progress") {
-        const total = Number(bar.dataset.total) || 1;
-        fill.style.width = (100 * m.done) / total + "%";
-        const tag = m.recompressed
-          ? ` — ${fmt(m.oldBytes)} → ${fmt(m.newBytes)}${m.blanked ? " (cropped)" : ""}${m.downsampled ? ` (↓${m.newW}×${m.newH})` : ""}`
-          : " — kept as-is";
-        setStatus(`${tick(`${m.done} / ${total}`)} images${tag}`);
-      } else if (m.type === "done") {
-        const secs = ((performance.now() - t0) / 1000).toFixed(1);
-        fill.style.width = "100%";
-        setStatus(`Done in ${tick(secs + "s")}.`);
-        showResult(m.stats, before, new Uint8Array(m.bytes));
-        resolve();
-      } else if (m.type === "error") {
-        fail("error: " + m.message);
-      }
-    };
+  try {
+    const buf = await currentFile.arrayBuffer(); // off-main-thread read; no sync memcpy
+    if (cancelled) return; // cancelled during the read
 
-    sendBytes(worker, { cmd: "optimize", opts });
-  });
+    await new Promise((resolve) => {
+      settle = resolve;
+      const worker = getOrchestrator();
+      const fail = (msg) => { setStatus("⚠ " + msg); bar.classList.remove("indeterminate"); resolve(); };
+      worker.onerror = (e) => fail("worker error: " + (e.message || "failed to load (check the console)"));
+      worker.onmessageerror = () => fail("worker message error");
 
-  go.disabled = false;
+      worker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "log") {
+          setStatus(m.msg);
+        } else if (m.type === "analyze") {
+          setStatus(`Analyzing pages… ${tick(`${m.page} / ${m.total}`)}`);
+        } else if (m.type === "start") {
+          bar.classList.remove("indeterminate");
+          bar.dataset.total = m.total || 1;
+          fill.style.width = "0%";
+          setStatus(`${tick(`0 / ${m.total}`)} images`);
+        } else if (m.type === "progress") {
+          const total = Number(bar.dataset.total) || 1;
+          fill.style.width = (100 * m.done) / total + "%";
+          const tag = m.recompressed
+            ? ` — ${fmt(m.oldBytes)} → ${fmt(m.newBytes)}${m.blanked ? " (cropped)" : ""}${m.downsampled ? ` (↓${m.newW}×${m.newH})` : ""}`
+            : " — kept as-is";
+          setStatus(`${tick(`${m.done} / ${total}`)} images${tag}`);
+        } else if (m.type === "done") {
+          const secs = ((performance.now() - t0) / 1000).toFixed(1);
+          fill.style.width = "100%";
+          setStatus(`Done in ${tick(secs + "s")}.`);
+          showResult(m.stats, before, new Uint8Array(m.bytes));
+          resolve();
+        } else if (m.type === "error") {
+          fail("error: " + m.message);
+        }
+      };
+
+      worker.postMessage({ cmd: "optimize", bytes: buf, opts, fileId }, [buf]);
+    });
+  } catch (err) {
+    setStatus("⚠ couldn't read file: " + (err?.message || err));
+    bar.classList.remove("indeterminate");
+  } finally {
+    cancelRun = null;
+    running = false;
+    setCancelMode(false);
+    if (cancelled) {
+      bar.classList.remove("indeterminate");
+      fill.style.width = "0%";
+      setStatus("Cancelled.");
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -262,9 +290,10 @@ async function run() {
 let probeData = null;
 let probeToken = 0; // guards against a newer file landing mid-scan
 
-function probeFile() {
-  if (!pdfBytes) return;
+async function probeFile() {
+  if (!currentFile) return;
   const token = ++probeToken;
+  const fileId = currentFileId; // bind the cached analysis to this exact file
   probeData = null;
   $("stats").hidden = false;
   $("statFacts").innerHTML = "";
@@ -285,7 +314,15 @@ function probeFile() {
     }
   };
 
-  sendBytes(worker, { cmd: "probe" });
+  let buf;
+  try {
+    buf = await currentFile.arrayBuffer();
+  } catch (err) {
+    if (token === probeToken) scanFailed(err?.message);
+    return;
+  }
+  if (token !== probeToken) return; // a newer file replaced this one mid-read
+  worker.postMessage({ cmd: "probe", bytes: buf, fileId }, [buf]);
 }
 
 function scanFailed(msg) {

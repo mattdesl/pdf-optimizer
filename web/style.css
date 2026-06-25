@@ -8,6 +8,7 @@
   --bg: #fff;
   --muted: #777;
   --accent: #1a1aff; /* electric blue, used sparingly */
+  --danger: #cc0000; /* cancel button + error text */
   --line: 1px solid var(--fg);
   --hair: 1px solid #e6e6e6; /* internal dividers */
   --box-pad: 1rem 1.25rem;
@@ -182,7 +183,7 @@ section {
   font-size: 0.8rem;
 }
 #drop .sub .err {
-  color: #cc0000;
+  color: var(--danger);
   font-weight: 700;
 }
 #drop .file-name {
@@ -463,6 +464,17 @@ input[type="range"]::-moz-range-thumb {
   color: #bbb;
   border-color: #ddd;
   cursor: not-allowed;
+}
+/* while a run is in flight the button becomes a red Cancel (rules after #go:hover
+   so they win on source order at equal specificity) */
+#go.cancel {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--bg);
+}
+#go.cancel:hover {
+  background: #a30000;
+  border-color: #a30000;
 }
 
 /* ---- progress ---- */

@@ -99,6 +99,9 @@ function walkXObjects(resources, set, visitedForms) {
  *                                          flat/vector-like and kept lossless (never JPEG'd)
  * @param {boolean} [opts.blankOffPage=true] flatten pixels that are never visible (drawn off the
  *                                          page) so they compress away; no content/CTM edits
+ * @param {object} [opts.analysis]          pre-computed page walk ({displaySizes,
+ *                                          dimsToPlacements, rotatedDims}) from probe();
+ *                                          when given, skips the second analyzePages pass
  * @param {(m:object)=>void} [opts.onImage] per-image progress callback
  * @returns {{bytes: Uint8Array, stats: object}}
  */
@@ -120,12 +123,19 @@ export async function optimize(input, opts = {}) {
   const doc = mupdf.PDFDocument.openDocument(input, "application/pdf");
 
   // One page walk feeds both --dpi (display sizes) and off-page blanking
-  // (placements). Skipped entirely when neither is requested.
+  // (placements). Skipped entirely when neither is requested. opts.analysis lets a
+  // caller pass in a previously-computed walk (e.g. from probe()) to skip it — the
+  // output is keyed by pixel dimensions and derived purely from page geometry, so
+  // it's identical for the same file regardless of the optimize settings.
   let displaySizes = null, dimsToPlacements = null, rotatedDims = null, dimsToXrefs = null;
   if (targetDPI || blankOffPage) {
-    ({ displaySizes, dimsToPlacements, rotatedDims } = analyzePages(doc, {
-      onPage: (page, total) => onAnalyze({ page, total }),
-    }));
+    if (opts.analysis) {
+      ({ displaySizes, dimsToPlacements, rotatedDims } = opts.analysis);
+    } else {
+      ({ displaySizes, dimsToPlacements, rotatedDims } = analyzePages(doc, {
+        onPage: (page, total) => onAnalyze({ page, total }),
+      }));
+    }
   }
 
   // Find xrefs used as SMasks so we can leave alpha channels alone.
@@ -395,7 +405,12 @@ export function probe(input, opts = {}) {
 
   // Stats are plain JS (no wasm-backed views), so release the parsed document now
   // — frees the input's footprint before the caller re-opens it for optimize().
-  const result = { fileBytes: input.length, pageCount, imageBytes, images };
+  // `analysis` is the page walk (also plain JS), handed back so optimize() can
+  // reuse it instead of walking the pages a second time (see opts.analysis there).
+  const result = {
+    fileBytes: input.length, pageCount, imageBytes, images,
+    analysis: { displaySizes, dimsToPlacements, rotatedDims },
+  };
   try { doc.destroy(); } catch { /* older mupdf builds may lack destroy() */ }
   return result;
 }

@@ -19,34 +19,50 @@ function loadEngine() {
   return enginePromise;
 }
 
-self.onmessage = async (e) => {
-  const { cmd, bytes, opts } = e.data;
-  if (cmd === "probe") return runProbe(bytes);
-  return runOptimize(bytes, opts);
+// Page analysis from the most recent probe, kept here so an optimize for the same
+// file can reuse it instead of walking the pages again. Keyed by a per-file id.
+let cachedAnalysis = null; // { fileId, analysis }
+
+// Serialize jobs through a promise chain. onmessage is async, so without this a
+// later `optimize` could start (and read cachedAnalysis) while an earlier `probe`
+// is still mid-await and hasn't cached its analysis yet — a race. Chaining makes
+// each job await the previous one to completion.
+let jobChain = Promise.resolve();
+self.onmessage = (e) => {
+  const data = e.data;
+  jobChain = jobChain
+    .then(() => (data.cmd === "probe" ? runProbe(data) : runOptimize(data)))
+    .catch(() => {}); // a job's own try/catch reports errors; never break the chain
 };
 
-async function runProbe(bytes) {
+async function runProbe({ bytes, fileId }) {
   try {
     log("scanning PDF…");
     const { probe } = await loadEngine();
     const result = probe(new Uint8Array(bytes), {
       onAnalyze: ({ page, total }) => self.postMessage({ type: "probe-analyze", page, total }),
     });
-    self.postMessage({ type: "probe", result });
+    // Keep the page walk here for reuse; ship only the stats to the main thread.
+    const { analysis, ...stats } = result;
+    cachedAnalysis = { fileId, analysis };
+    self.postMessage({ type: "probe", result: stats });
   } catch (err) {
     self.postMessage({ type: "probe-error", message: err && err.message });
   }
 }
 
-async function runOptimize(bytes, opts) {
+async function runOptimize({ bytes, opts, fileId }) {
   try {
     log("received PDF — loading engine + mupdf wasm…");
     const { optimize } = await loadEngine();
-    log("engine ready — opening document…");
+    // Reuse the scan's page walk when it's for this same file.
+    const analysis = cachedAnalysis && cachedAnalysis.fileId === fileId ? cachedAnalysis.analysis : undefined;
+    log(analysis ? "engine ready — reusing scan analysis…" : "engine ready — opening document…");
 
     let done = 0;
     const result = await optimize(new Uint8Array(bytes), {
       ...opts,
+      analysis,
       onAnalyze: ({ page, total }) => self.postMessage({ type: "analyze", page, total }),
       onStart: ({ totalImages }) => {
         log(`processing ${totalImages} images…`);
