@@ -1,0 +1,13 @@
+{
+  "name": "PDF Optimizer",
+  "id": "pdf-optimizer-dev",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["https://mattdesl.github.io"],
+    "devAllowedDomains": ["http://localhost:5173", "ws://localhost:5173"],
+    "reasoning": "Loads the optimizer's UI, workers and WASM from the app's own origin. The PDF is processed entirely inside the plugin iframe and is never uploaded anywhere."
+  }
+}

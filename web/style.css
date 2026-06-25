@@ -569,3 +569,41 @@ footer a {
     flex-basis: 100%;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Compact embed — Figma plugin window (<app>/?figma; see figma-plugin/).
+ * Drops the chrome that's redundant in a small docked panel: the h1 +
+ * tagline (Figma's own title bar names the plugin), the "// INPUT" label
+ * (the drop zone already says what to do), and the footer + its bar. Then
+ * tightens the page so it sits well in ~460px.
+ * ------------------------------------------------------------------ */
+
+body.figma header,
+body.figma footer,
+body.figma section:first-of-type > .label {
+  display: none;
+}
+
+body.figma main {
+  max-width: none;
+  padding: 0.9rem 0.9rem 1.1rem;
+}
+
+body.figma section {
+  margin-bottom: 0.9rem;
+}
+
+body.figma .label {
+  margin-bottom: 0.3rem;
+}
+
+body.figma #drop {
+  min-height: 92px;
+  padding: 1rem;
+}
+
+body.figma .statbox,
+body.figma #options,
+body.figma #report {
+  padding: 0.7rem 0.8rem;
+}

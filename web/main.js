@@ -46,6 +46,18 @@ const statEstimate = $("statEstimate");
 
 const setStatus = (html) => { statusEl.innerHTML = html; };
 
+/* ------------------------------------------------------------------ *
+ * Figma embed mode (?figma) — see figma-plugin/. Switches to a compact
+ * layout (header/footer/labels trimmed in style.css) and reports our content
+ * height to the plugin sandbox (figma-plugin/code.js), which resizes the
+ * plugin window to fit. Harmless in a normal tab: `parent` is just `window`.
+ * ------------------------------------------------------------------ */
+if (new URLSearchParams(location.search).has("figma")) {
+  document.body.classList.add("figma");
+  const postHeight = () => parent.postMessage({ type: "resize", height: Math.ceil(document.body.scrollHeight) }, "*");
+  new ResizeObserver(postHeight).observe(document.body); // fires on observe, and on every reveal/relayout
+}
+
 // The dropped File. Bytes are read fresh per probe/run via File.arrayBuffer() and
 // transferred to the worker, so the main thread never holds — or synchronously
 // copies — the whole multi-hundred-MB PDF (that copy was the worst UI jank).

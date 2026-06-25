@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8" />
+<!--
+  Bootstrap UI.
+
+  Figma inlines this file as the plugin iframe, where the origin is opaque (null):
+  there is no base URL, so `new URL('./x.worker.js', import.meta.url)`, wasm located
+  via import.meta.url, and ES-module-worker nested imports all fail to resolve. Our
+  whole engine (orchestrator worker -> encode pool -> mupdf/jsquash wasm) depends on
+  a real origin.
+
+  So instead of bundling the app here, we navigate the iframe to the *real* app on
+  its own https origin. There everything resolves exactly as in the normal web build,
+  with zero engine changes. ?figma signals the app that it's embedded (compact UI,
+  postMessage to the sandbox instead of/in addition to the download link, etc.).
+
+  The postMessage bridge to the sandbox keeps working after navigation: from the app
+  `parent.postMessage(msg, '*')` reaches Figma, which delivers it to code.js's
+  `figma.ui.onmessage`; `figma.ui.postMessage` dispatches a `message` event on the
+  iframe window. Origin/navigation don't change that.
+-->
+<body style="margin:0;font:13px/1.4 system-ui,sans-serif;color:#888;display:grid;place-items:center;height:100vh">
+  loading PDF Optimizer…
+  <script>
+    // Flip between the local dev server and the published build. (Keep both domains
+    // in manifest.json -> networkAccess so Figma allows the navigation.)
+    var DEV = "http://localhost:5173/?figma";
+    var PROD = "https://mattdesl.github.io/pdf-optimizer/?figma";
+    location.href = DEV;
+  </script>
+</body>
